@@ -3,7 +3,7 @@ import pandas as pd
 from collections import Counter
 import io # Required for in-memory CSV creation
 
-def find_repeated_sequences(data_rows, min_length=25):
+def find_repeated_sequences(data_rows, min_length=15):
     """
     Finds repeated sequences of text within a list of (task_id, sentence) tuples.
 
@@ -19,11 +19,7 @@ def find_repeated_sequences(data_rows, min_length=25):
     """
     all_sequences_data = [] # Stores (sequence_text, original_row_index, task_id, sentence, start_char_index)
 
-    # Generate all possible sequences of min_length or greater from each sentence
-    # We'll use the original row index from the DataFrame (0-based)
     for original_row_idx, row_data in enumerate(data_rows):
-        # Assume first element is task_id, second is sentence
-        # Convert to string to handle potential non-string types (e.g., numbers, None)
         # Handle cases where row_data might not have enough elements gracefully
         task_id = str(row_data[0]) if len(row_data) > 0 else "N/A"
         sentence = str(row_data[1]) if len(row_data) > 1 else ""
@@ -35,7 +31,6 @@ def find_repeated_sequences(data_rows, min_length=25):
             seq = sentence[j : j + min_length]
             all_sequences_data.append((seq, original_row_idx + 2, task_id, sentence, j)) # +2 for 1-based row display after header
 
-    # Group sequences by their text content
     grouped_sequences = {}
     for seq_text, original_row_idx, task_id, sentence, char_idx in all_sequences_data:
         if seq_text not in grouped_sequences:
@@ -45,7 +40,6 @@ def find_repeated_sequences(data_rows, min_length=25):
     repeated_sequences = {}
 
     for seq_text, occurrences in grouped_sequences.items():
-        # Check if the sequence appears in more than one *unique* sentence (based on original_row_index)
         unique_sentence_rows = set(occ[0] for occ in occurrences) # Use original_row_idx for uniqueness
         
         if len(unique_sentence_rows) > 1:
@@ -68,26 +62,17 @@ uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        # Read the CSV. We don't specify column names here;
-        # pandas will infer them or assign default integers (0, 1, 2...)
-        df = pd.read_csv(uploaded_file, header=None) # Read without header initially
-        # Then, treat the first row as header and skip it for data processing
-        # data_rows will be from the second row onwards (index 1 onwards in the df)
+        df = pd.read_csv(uploaded_file, header=None) # Read without header
         
-        # Prepare data: list of (first_column_value, second_column_value) tuples
-        # We assume the first column (index 0) is task id and second (index 1) is sentence.
         data_to_process = []
         # Iterate from the second row (index 1) onwards for actual data
         for index in range(1, len(df)): # Start from index 1 to skip header
             row = df.iloc[index]
-            # row_num_for_display will be index + 1 if we're considering header as row 1
-            # But since find_repeated_sequences increments by +2 for 1-based row after header, 
-            # we'll pass actual df index to the function, and it will handle the +2.
             
             if len(row) >= 2: # Ensure there are at least two columns
                 data_to_process.append((row.iloc[0], row.iloc[1])) # Use .iloc to get by positional index
             else:
-                st.warning(f"Row {index + 1} skipped (CSV row number, including header): Not enough columns (expected at least 2).") # +1 for 1-based row from original CSV
+                st.warning(f"Row {index + 1} skipped (CSV row number, including header): Not enough columns (expected at least 2).")
 
         if not data_to_process:
             st.warning("No valid data rows found after processing. Please check your CSV format and ensure it has at least 2 columns and data beyond the header.")
@@ -131,10 +116,9 @@ if uploaded_file is not None:
                         st.markdown(f"- **Row {original_row_idx}** | **Task ID:** `{task_id}` | **Sentence:** {highlighted_sentence}", unsafe_allow_html=True)
                     st.markdown("---")
                 
-                # Create DataFrame for export
+                st.info("Generating download file...") # <-- New debugging message
                 export_df = pd.DataFrame(export_data)
                 
-                # Add download button
                 st.download_button(
                     label="Download Results as CSV",
                     data=export_df.to_csv(index=False, encoding='utf-8-sig'), # utf-8-sig for proper Thai display in Excel
@@ -148,10 +132,4 @@ if uploaded_file is not None:
     except pd.errors.EmptyDataError:
         st.error("The uploaded CSV file is empty.")
     except Exception as e:
-        st.error(f"An unexpected error occurred during file processing: {e}. Please ensure your CSV file is correctly formatted.")
-
-st.markdown("""
----
-*Note: This app performs a simple substring search. It might not catch semantically similar but syntactically different phrases.*
-*It processes all rows from the CSV, assuming the first row is a header and subsequent rows contain the data in the first two columns.*
-""")
+        st.error(f"An unexpected
