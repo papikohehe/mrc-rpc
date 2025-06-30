@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from collections import Counter
+import io # Required for in-memory CSV creation
 
 def find_repeated_sequences(data_rows, min_length=15):
     """
@@ -23,8 +24,9 @@ def find_repeated_sequences(data_rows, min_length=15):
     for original_row_idx, row_data in enumerate(data_rows):
         # Assume first element is task_id, second is sentence
         # Convert to string to handle potential non-string types (e.g., numbers, None)
-        task_id = str(row_data[0])
-        sentence = str(row_data[1])
+        # Handle cases where row_data might not have enough elements gracefully
+        task_id = str(row_data[0]) if len(row_data) > 0 else "N/A"
+        sentence = str(row_data[1]) if len(row_data) > 1 else ""
         
         if pd.isna(sentence) or len(sentence) < min_length: # Skip if sentence is NaN or too short
             continue
@@ -68,19 +70,27 @@ if uploaded_file is not None:
     try:
         # Read the CSV. We don't specify column names here;
         # pandas will infer them or assign default integers (0, 1, 2...)
-        df = pd.read_csv(uploaded_file)
-
+        df = pd.read_csv(uploaded_file, header=None) # Read without header initially
+        # Then, treat the first row as header and skip it for data processing
+        # data_rows will be from the second row onwards (index 1 onwards in the df)
+        
         # Prepare data: list of (first_column_value, second_column_value) tuples
         # We assume the first column (index 0) is task id and second (index 1) is sentence.
         data_to_process = []
-        for index, row in df.iterrows():
+        # Iterate from the second row (index 1) onwards for actual data
+        for index in range(1, len(df)): # Start from index 1 to skip header
+            row = df.iloc[index]
+            # row_num_for_display will be index + 1 if we're considering header as row 1
+            # But since find_repeated_sequences increments by +2 for 1-based row after header, 
+            # we'll pass actual df index to the function, and it will handle the +2.
+            
             if len(row) >= 2: # Ensure there are at least two columns
                 data_to_process.append((row.iloc[0], row.iloc[1])) # Use .iloc to get by positional index
             else:
-                st.warning(f"Row {index + 2} skipped: Not enough columns (expected at least 2).") # +2 for 1-based row after header
+                st.warning(f"Row {index + 1} skipped (CSV row number, including header): Not enough columns (expected at least 2).") # +1 for 1-based row from original CSV
 
         if not data_to_process:
-            st.warning("No valid data rows found after processing. Please check your CSV format.")
+            st.warning("No valid data rows found after processing. Please check your CSV format and ensure it has at least 2 columns and data beyond the header.")
         else:
             st.success("File uploaded successfully! Processing...")
 
@@ -90,29 +100,53 @@ if uploaded_file is not None:
             if repeated_seqs_data:
                 st.subheader("Repeated Sequences Found:")
                 st.write("The following sequences of 15 characters or more were found in multiple sentences:")
+                
+                export_data = [] # List to store data for export CSV
+                
                 for seq, occurrences in repeated_seqs_data.items():
                     st.markdown(f"**Sequence:** `{seq}`")
                     
-                    # Filter occurrences to only show unique sentences where it appears for summary
                     unique_sentences_for_summary = set(occ[0] for occ in occurrences) # Use row index for uniqueness
 
                     st.write(f"This sequence appears in {len(unique_sentences_for_summary)} unique sentences across the dataset:")
                     
-                    # Display all occurrences
                     for original_row_idx, task_id, sentence, char_idx in occurrences:
-                        # Highlight the repeated sequence
+                        # Prepare data for export
+                        export_data.append({
+                            "Repeated Sequence": seq,
+                            "Length of Sequence (chars)": len(seq),
+                            "Original Row": original_row_idx,
+                            "Task ID": task_id,
+                            "Full Sentence": sentence
+                        })
+
+                        # Highlight for display
                         if len(sentence) >= char_idx + len(seq):
                             highlighted_sentence = sentence[:char_idx] + \
                                                    f"<mark>**{sentence[char_idx : char_idx + len(seq)]}**</mark>" + \
                                                    sentence[char_idx + len(seq):]
                         else: 
-                            highlighted_sentence = sentence # Fallback if for some reason index is out of bounds
+                            highlighted_sentence = sentence # Fallback
                         
                         st.markdown(f"- **Row {original_row_idx}** | **Task ID:** `{task_id}` | **Sentence:** {highlighted_sentence}", unsafe_allow_html=True)
                     st.markdown("---")
+                
+                # Create DataFrame for export
+                export_df = pd.DataFrame(export_data)
+                
+                # Add download button
+                st.download_button(
+                    label="Download Results as CSV",
+                    data=export_df.to_csv(index=False, encoding='utf-8-sig'), # utf-8-sig for proper Thai display in Excel
+                    file_name="repeated_sequences_report.csv",
+                    mime="text/csv"
+                )
+
             else:
                 st.info("No repeated sequences of 15 characters or more found in the sentences.")
 
+    except pd.errors.EmptyDataError:
+        st.error("The uploaded CSV file is empty.")
     except Exception as e:
         st.error(f"An unexpected error occurred during file processing: {e}. Please ensure your CSV file is correctly formatted.")
 
