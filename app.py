@@ -22,6 +22,11 @@ def find_repeated_sequences(sentences_with_ids, min_length=15):
     for original_row_idx, (task_id, sentence) in enumerate(sentences_with_ids):
         if pd.isna(sentence): # Skip if sentence is NaN
             continue
+        # Ensure sentence is a string before checking length
+        sentence = str(sentence)
+        if len(sentence) < min_length: # Skip sentences too short to contain a sequence of min_length
+            continue
+
         for j in range(len(sentence) - min_length + 1):
             seq = sentence[j : j + min_length]
             all_sequences_data.append((seq, original_row_idx + 1, task_id, sentence, j)) # +1 for 1-based row display
@@ -36,11 +41,10 @@ def find_repeated_sequences(sentences_with_ids, min_length=15):
     repeated_sequences = {}
 
     for seq_text, occurrences in grouped_sequences.items():
-        # Check if the sequence appears in more than one *unique* sentence (based on task_id/original_row_index)
-        # To avoid counting multiple occurrences within the same sentence as "repeated across sentences"
-        unique_sentence_occurrences = set((occ[0], occ[1]) for occ in occurrences) # (original_row_index, task_id)
+        # Check if the sequence appears in more than one *unique* sentence (based on original_row_index)
+        unique_sentence_rows = set(occ[0] for occ in occurrences) # Use original_row_idx to define unique sentences
         
-        if len(unique_sentence_occurrences) > 1:
+        if len(unique_sentence_rows) > 1:
             repeated_sequences[seq_text] = occurrences
             
     return repeated_sequences
@@ -52,8 +56,8 @@ st.title("CSV Sentence Sequence Checker (Thai)")
 st.markdown("""
 This app checks a CSV file for repeated sequences of text within the 'sentence' column.
 It will identify sequences longer than 15 characters that appear in multiple sentences.
-The app assumes your CSV has a header row and 'task id' and 'sentence' columns.
-Processing will start from the second row of the CSV.
+**The app assumes your CSV has a header row and 'task id' and 'sentence' columns.**
+Processing will start from the second row of the CSV (i.e., skipping the header).
 """)
 
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
@@ -63,15 +67,13 @@ if uploaded_file is not None:
         # Read the CSV, assuming header is present and data starts from row 2
         df = pd.read_csv(uploaded_file)
 
-        # We assume 'task id' and 'sentence' columns exist.
-        # Ensure we are working with string type for sentences to prevent errors with NaNs.
-        df['sentence'] = df['sentence'].astype(str)
-
         # Prepare data: list of (task_id, sentence) tuples
-        # We process all rows, as the problem states "from row 2 onwards" implies processing the entire data after header.
+        # We assume 'task id' and 'sentence' columns exist and directly access them.
+        # Ensure we are working with string type for sentences to prevent errors with NaNs.
+        # pd.isna check is also added within the function for robustness.
         sentences_to_process = []
         for index, row in df.iterrows():
-            sentences_to_process.append((row['task id'], row['sentence']))
+            sentences_to_process.append((row['task id'], str(row['sentence']))) # Ensure sentence is string here too
 
         st.success("File uploaded successfully! Processing...")
 
@@ -87,26 +89,29 @@ if uploaded_file is not None:
                 # Filter occurrences to only show unique sentences where it appears for summary
                 unique_sentences_for_summary = set()
                 for original_row_idx, task_id, sentence, char_idx in occurrences:
-                    unique_sentences_for_summary.add((original_row_idx, task_id))
+                    unique_sentences_for_summary.add(original_row_idx) # Use row index for uniqueness
 
                 st.write(f"This sequence appears in {len(unique_sentences_for_summary)} unique sentences across the dataset:")
                 
-                # Display all occurrences, including potentially multiple within the same sentence
+                # Display all occurrences
                 for original_row_idx, task_id, sentence, char_idx in occurrences:
                     # Highlight the repeated sequence
-                    highlighted_sentence = sentence[:char_idx] + \
-                                           f"<mark>**{sentence[char_idx : char_idx + len(seq)]}**</mark>" + \
-                                           sentence[char_idx + len(seq):]
+                    # Make sure the sentence is long enough to contain the sequence, otherwise slice will fail
+                    if len(sentence) >= char_idx + len(seq):
+                        highlighted_sentence = sentence[:char_idx] + \
+                                               f"<mark>**{sentence[char_idx : char_idx + len(seq)]}**</mark>" + \
+                                               sentence[char_idx + len(seq):]
+                    else: # Fallback if for some reason the char_idx or seq_len is out of bounds
+                        highlighted_sentence = sentence 
                     
                     st.markdown(f"- **Row {original_row_idx}** | **Task ID:** `{task_id}` | **Sentence:** {highlighted_sentence}", unsafe_allow_html=True)
                 st.markdown("---")
         else:
             st.info("No repeated sequences of 15 characters or more found in the sentences.")
 
-    except KeyError as ke:
-        st.error(f"Error: Missing expected column. Please ensure your CSV has 'task id' and 'sentence' columns. Detail: {ke}")
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}. Please ensure your CSV file is correctly formatted.")
+        # This will now catch any error, including KeyError if columns are missing
+        st.error(f"An error occurred during file processing: {e}. Please ensure your CSV file is correctly formatted and contains 'task id' and 'sentence' columns.")
 
 st.markdown("""
 ---
