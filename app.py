@@ -23,31 +23,23 @@ def find_repeated_sequences(data_rows, min_length_for_search):
 
     for sub_text, source_set in all_substrings_sources.items():
         if len(source_set) > 1:
-            occurrences_list = []
-            for (csv_row_num, tid, full_sent) in source_set:
-                start_idx = 0
-                while True:
-                    start_idx = full_sent.find(sub_text, start_idx)
-                    if start_idx == -1:
-                        break
-                    occurrences_list.append((csv_row_num, tid, full_sent, start_idx))
-                    start_idx += 1
-            if occurrences_list:
-                repeated_sequences[sub_text] = occurrences_list
+            repeated_sequences[sub_text] = list(source_set)
     
     return repeated_sequences
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
-st.title("CSV Sentence Repetition Checker (Thai)")
+st.title("⚡ Fast CSV Sentence Repetition Checker")
 
 st.markdown("""
-Upload a CSV file with at least two columns: task ID and sentence.
-This tool finds and highlights **repeated sequences of text** across multiple rows.
+Upload a CSV file with columns: task ID and sentence.
+This tool detects repeated substrings across different rows.
 """)
 
 uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-user_length = st.number_input("Minimum sequence length to search for:", min_value=2, max_value=1000, value=20, step=1)
+user_length = st.number_input("Minimum sequence length:", min_value=2, max_value=500, value=20)
+
+max_preview = st.slider("How many repeated sequences to preview?", 0, 100, 10, step=5)
 
 if uploaded_file:
     try:
@@ -62,17 +54,14 @@ if uploaded_file:
         if not data_to_process:
             st.warning("No valid data rows found.")
         else:
-            st.success("File uploaded. Processing...")
+            st.success("Processing...")
 
-            with st.spinner(f"Searching for repeated sequences of at least {user_length} characters..."):
+            with st.spinner("Finding repeated sequences..."):
                 all_found_sequences_data = find_repeated_sequences(data_to_process, user_length)
 
             export_data = []
-            st.markdown(f"### Results (Min Length: {user_length} characters)")
-            st.markdown(f"**Found {len(all_found_sequences_data)} unique repeated sequences**")
-
-            for seq, occurrences in sorted(all_found_sequences_data.items(), key=lambda x: len(x[0]), reverse=True):
-                for original_csv_row_number, task_id, sentence, char_idx in occurrences:
+            for seq, occurrences in all_found_sequences_data.items():
+                for original_csv_row_number, task_id, sentence in occurrences:
                     export_data.append({
                         "Repeated Sequence": seq,
                         "Length of Sequence (chars)": len(seq),
@@ -82,35 +71,30 @@ if uploaded_file:
                     })
 
             if export_data:
-                # Sort before export
                 export_df = pd.DataFrame(export_data)
                 export_df.sort_values(by=["Repeated Sequence", "Task ID", "Full Sentence"], inplace=True)
-                
-                # Download button at top
+
+                # --- Download Button ---
                 st.download_button(
-                    label="📥 Download Results as CSV",
+                    label="📥 Download All Results (CSV)",
                     data=export_df.to_csv(index=False, encoding='utf-8-sig'),
                     file_name=f"repeated_sequences_minlen_{user_length}.csv",
                     mime="text/csv"
                 )
 
-                # Render results
-                for seq, occurrences in sorted(all_found_sequences_data.items(), key=lambda x: len(x[0]), reverse=True):
-                    st.markdown(f"---\n#### Sequence: `{seq}` (Length: {len(seq)} chars)")
-                    for original_csv_row_number, task_id, sentence, char_idx in occurrences:
-                        if len(sentence) >= char_idx + len(seq):
-                            highlighted = sentence[:char_idx] + \
-                                          f"<mark><b>{sentence[char_idx : char_idx + len(seq)]}</b></mark>" + \
-                                          sentence[char_idx + len(seq):]
-                        else:
-                            highlighted = sentence
-                        st.markdown(f"- **Row {original_csv_row_number}** | **Task ID:** `{task_id}` | **Sentence:** {highlighted}", unsafe_allow_html=True)
+                # --- Optional Preview ---
+                if max_preview > 0:
+                    st.markdown(f"### 🔍 Top {max_preview} repeated sequences preview")
+                    preview_df = export_df.drop_duplicates(subset=["Repeated Sequence"]).head(max_preview)
+                    for _, row in preview_df.iterrows():
+                        st.markdown(f"- **Sequence:** `{row['Repeated Sequence']}` ({row['Length of Sequence (chars)']} chars)")
+
             else:
                 st.info("No repeated sequences found.")
 
     except pd.errors.EmptyDataError:
         st.error("Uploaded file is empty.")
     except Exception as e:
-        st.error(f"Error while processing file: {e}")
+        st.error(f"Error: {e}")
 
-st.markdown("---\n_Developed for Thai CSV sentence deduplication and substring analysis._")
+st.markdown("---\n_Optimized for large datasets. Designed for Thai sentence analysis._")
