@@ -3,7 +3,7 @@ import pandas as pd
 from collections import Counter
 import io # Required for in-memory CSV creation
 
-def find_repeated_sequences(data_rows, min_length=15):
+def find_repeated_sequences(data_rows, min_length=25):
     """
     Finds repeated sequences of text within a list of (task_id, sentence) tuples.
 
