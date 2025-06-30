@@ -132,4 +132,10 @@ if uploaded_file is not None:
     except pd.errors.EmptyDataError:
         st.error("The uploaded CSV file is empty.")
     except Exception as e:
-        st.error(f"An unexpected
+        st.error(f"An unexpected error occurred during file processing: {e}. Please ensure your CSV file is correctly formatted.")
+
+st.markdown("""
+---
+*Note: This app performs a simple substring search. It might not catch semantically similar but syntactically different phrases.*
+*It processes all rows from the CSV, assuming the first row is a header and subsequent rows contain the data in the first two columns.*
+""")
